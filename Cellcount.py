@@ -6,6 +6,26 @@ import csv
 from skimage.feature import blob_log
 from math import sqrt
 import matplotlib.pyplot as plt
+from skimage.transform import hough_circle, hough_circle_peaks
+from skimage.feature import canny
+from skimage.draw import circle_perimeter
+
+
+def main():
+
+    # give path to picture folder:
+    datapath = "/home/villads/Documents/Cell-Data2/"
+
+
+    for dir in os.listdir(datapath):
+        CropImages(datapath + dir + '/')
+        # check is output dir exist or create one
+
+
+        # if not os.path.isdir(dir + '_output'):
+        #     os.mkdir(dir + '_output')
+        # outputdir = dir + '_output'
+        # CountCells(datapath + dir + '/', outputdir)
 
 
 def plot_circles(circle_list, ax, args={"color": "white", "linewidth": 1, "alpha": 0.5}):
@@ -34,17 +54,26 @@ def search_for_blobs(image, min_size=3, max_size=15, num_sigma=10, overlap=0.5, 
     return blobs_log
 
 
-def CropImages(imagepath):
+def CropImages(imagepath, ContainerType="petri dish"):
     pattern = ".jpg"
     matching_files = [f for f in os.listdir(imagepath) if pattern in f]
     for pic in matching_files:
         if exists(imagepath + pic[0:len(pic)-4] + "_cropped.jpg") or pic[len(pic)-12:len(pic)] == "_cropped.jpg":
             print(pic + " Already cropped")
             continue
-        img = cv2.imread(imagepath + pic)
+        print('cropping ', imagepath + pic)
+        img = cv2.imread(imagepath + pic,0)
+    
+        #find cell container
+        if ContainerType=="petri dish":
+            detect_circle_by_canny(img, radius=400)
+            # plt.title("segmentation")
+            # plt.imshow(img)
+            # plt.imshow(labeled)
+            # plt.savefig("test.png", dpi=1000)
 
-        crop_img = img[8000:11167, 3850:5842]
-        cv2.imwrite(imagepath + pic[0:len(pic)-4] + "_cropped.jpg", crop_img)
+        # crop_img = img[8000:11167, 3850:5842]
+        # cv2.imwrite(imagepath + pic[0:len(pic)-4] + "_cropped.jpg", crop_img)
 
 
 def CountCells(datadir, outputdir):
@@ -131,19 +160,22 @@ def FilterBlueColor(img):
 
     return res
 
+def detect_circle_by_canny(image_bw, radius=395):
+    img = cv2.medianBlur(image_bw,5)
+    cimg = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
+    circles = cv2.HoughCircles(img,cv2.HOUGH_GRADIENT,1,20,
+                            param1=50,param2=30,minRadius=0,maxRadius=0)
+    circles = np.uint16(np.around(circles))
+    
+    for i in circles[0,:]:
+        # draw the outer circle
+        cv2.circle(cimg,(i[0],i[1]),i[2],(0,255,0),2)
+        # draw the center of the circle
+        cv2.circle(cimg,(i[0],i[1]),2,(0,0,255),3)
+    cv2.imshow('detected circles',cimg)
+    cv2.waitKey(0)
 
-def main():
-
-    # give path to picture folder:
-    datapath = "/home/villads/Documents/Cell-Data/"
-
-    for dir in os.listdir(datapath):
-        CropImages(datapath + dir + '/')
-        # check is output dir exist or create one
-        if not os.path.isdir(dir + '_output'):
-            os.mkdir(dir + '_output')
-        outputdir = dir + '_output'
-        CountCells(datapath + dir + '/', outputdir)
+    return 0
 
 
 if __name__ == "__main__":
