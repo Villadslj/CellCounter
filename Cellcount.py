@@ -63,10 +63,15 @@ def CropImages(imagepath, ContainerType="petri dish"):
             continue
         print('cropping ', imagepath + pic)
         img = cv2.imread(imagepath + pic,0)
-    
+        crop_factor = 8
+        img_small = cv2.resize(img, (round(img.shape[1]/crop_factor), round(img.shape[0]/crop_factor)))
+        # cv2.imshow('test',img_small)
+        # cv2.waitKey(0)
+
+        petri_D = 1300
         #find cell container
         if ContainerType=="petri dish":
-            detect_circle_by_canny(img, radius=400)
+            detect_circle_by_canny(img_small, radius=round(petri_D/crop_factor))
             # plt.title("segmentation")
             # plt.imshow(img)
             # plt.imshow(labeled)
@@ -161,12 +166,15 @@ def FilterBlueColor(img):
     return res
 
 def detect_circle_by_canny(image_bw, radius=395):
-    img = cv2.medianBlur(image_bw,5)
+    img = cv2.medianBlur(image_bw,1)
     cimg = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
     circles = cv2.HoughCircles(img,cv2.HOUGH_GRADIENT,1,20,
-                            param1=50,param2=30,minRadius=0,maxRadius=0)
+                            param1=50,param2=30,minRadius=round(radius-(radius*0.1)),maxRadius=radius)
     circles = np.uint16(np.around(circles))
-    
+    cv2.namedWindow('detected circles',cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('detected circles', 300, 700)
+    cv2.imshow('detected circles',cimg)
+    cv2.waitKey(0)
     for i in circles[0,:]:
         # draw the outer circle
         cv2.circle(cimg,(i[0],i[1]),i[2],(0,255,0),2)
@@ -175,7 +183,7 @@ def detect_circle_by_canny(image_bw, radius=395):
     cv2.imshow('detected circles',cimg)
     cv2.waitKey(0)
 
-    return 0
+    return circles
 
 
 if __name__ == "__main__":
