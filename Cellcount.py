@@ -4,7 +4,7 @@ import numpy as np
 import os
 import csv
 from skimage.feature import blob_log
-from math import sqrt
+from math import dist, sqrt
 import matplotlib.pyplot as plt
 from skimage.transform import hough_circle, hough_circle_peaks
 from skimage.feature import canny
@@ -20,11 +20,9 @@ def main():
     for dir in os.listdir(datapath):
         CropImages(datapath + dir + '/')
         # check is output dir exist or create one
-
-
-        # if not os.path.isdir(dir + '_output'):
-        #     os.mkdir(dir + '_output')
-        # outputdir = dir + '_output'
+        if not os.path.isdir(datapath + dir + '_output'):
+            os.mkdir(datapath + dir + '_output')
+        # outputdir = datapath + dir + '_output'
         # CountCells(datapath + dir + '/', outputdir)
 
 
@@ -61,8 +59,11 @@ def CropImages(imagepath, ContainerType="petri dish"):
         if exists(imagepath + pic[0:len(pic)-4] + "_cropped.jpg") or pic[len(pic)-12:len(pic)] == "_cropped.jpg":
             print(pic + " Already cropped")
             continue
+        if exists(imagepath + "refference.jpg") or pic[len(pic)-12:len(pic)] == "_cropped.jpg":
+            print(pic + " Is a refference picture")
+            continue
         print('cropping ', imagepath + pic)
-        img = cv2.imread(imagepath + pic,0)
+        img = cv2.imread(imagepath + pic)
         crop_factor = 8
         img_small = cv2.resize(img, (round(img.shape[1]/crop_factor), round(img.shape[0]/crop_factor)))
         # cv2.imshow('test',img_small)
@@ -71,14 +72,30 @@ def CropImages(imagepath, ContainerType="petri dish"):
         petri_D = 1300
         #find cell container
         if ContainerType=="petri dish":
-            detect_circle_by_canny(img_small, radius=round(petri_D/crop_factor))
+            circles = detect_circle_by_canny(img_small, radius=round(petri_D/crop_factor))
+            cropname = 0
+            for i in circles:
+                x=i[0]*crop_factor 
+                y=i[1]*crop_factor
+                r=i[2]*crop_factor
+                mask = np.zeros(img.shape[:2], dtype="uint8")
+                mask = cv2.circle(mask,(x,y),r,255,-1)
+                #cv2.imwrite(argv[2],mask)
+                out = cv2.bitwise_and(img, img, mask=mask)
+                crop_img = out[y-r:y+r, x-r:x+r]
+            
+                cv2.putText(img=img_small, text=str(cropname), org=(round(x/crop_factor), round(y/crop_factor)), 
+                           fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=3, color=(0, 0, 0),thickness=3)
+                cv2.imwrite(imagepath  + str(cropname) + "_cropped.jpg", crop_img)
+                cropname +=1
+            cv2.imwrite(imagepath  + "refference.jpg", img_small)
+
             # plt.title("segmentation")
             # plt.imshow(img)
             # plt.imshow(labeled)
             # plt.savefig("test.png", dpi=1000)
 
-        # crop_img = img[8000:11167, 3850:5842]
-        # cv2.imwrite(imagepath + pic[0:len(pic)-4] + "_cropped.jpg", crop_img)
+        
 
 
 def CountCells(datadir, outputdir):
@@ -167,23 +184,50 @@ def FilterBlueColor(img):
 
 def detect_circle_by_canny(image_bw, radius=395):
     img = cv2.medianBlur(image_bw,1)
-    cimg = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
-    circles = cv2.HoughCircles(img,cv2.HOUGH_GRADIENT,1,20,
+    cimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    circles = cv2.HoughCircles(cimg,cv2.HOUGH_GRADIENT,1,20,
                             param1=50,param2=30,minRadius=round(radius-(radius*0.1)),maxRadius=radius)
     circles = np.uint16(np.around(circles))
     cv2.namedWindow('detected circles',cv2.WINDOW_NORMAL)
     cv2.resizeWindow('detected circles', 300, 700)
     cv2.imshow('detected circles',cimg)
-    cv2.waitKey(0)
+    # Remove overlapping circles
+    CircleList=[]
     for i in circles[0,:]:
-        # draw the outer circle
-        cv2.circle(cimg,(i[0],i[1]),i[2],(0,255,0),2)
-        # draw the center of the circle
-        cv2.circle(cimg,(i[0],i[1]),2,(0,0,255),3)
-    cv2.imshow('detected circles',cimg)
-    cv2.waitKey(0)
+        CircleList.append(i)
+    for i in range(len(CircleList)):
+        pt1=CircleList[i]
+        if (isinstance(pt1, int)):
+                continue
+        r=pt1[2]
+        for k in range(len(CircleList)):
+            pt2=CircleList[k]
+            if (isinstance(pt2, int) or isinstance(pt1, int)):
+                continue
+            if(pt1[0]==pt2[0] and pt1[1]==pt2[1]):
+                continue
+            distVec= [int(pt2[0])-int(pt1[0]),int(pt2[1])-int(pt1[1])]
+            distLength=sqrt(pow(distVec[0],2) + pow(distVec[1],2))
 
-    return circles
+            if(distLength < r and distLength!=0):
+                if(int(pt1[0]) < int(pt2[0])):
+                    CircleList[k]=int(0)
+                else:
+                    CircleList[i]=int(0)
+                
+    CircleList = [i for i in CircleList if not isinstance(i, int)]
+
+    # print(CircleList)
+    for i in range(len(CircleList)):
+        circ=CircleList[i]
+        # draw the outer circle
+        cv2.circle(cimg,(circ[0],circ[1]),circ[2],(0,255,0),2)
+        # draw the center of the circle
+        cv2.circle(cimg,(circ[0],circ[1]),2,(0,0,255),3)
+    # cv2.imshow('detected circles',cimg)
+    # cv2.waitKey(0)
+
+    return CircleList
 
 
 if __name__ == "__main__":
