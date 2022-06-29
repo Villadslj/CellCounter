@@ -18,12 +18,14 @@ def main():
 
 
     for dir in os.listdir(datapath):
+        if dir[-7:len(dir)] == "_output":
+            continue
         CropImages(datapath + dir + '/')
         # check is output dir exist or create one
         if not os.path.isdir(datapath + dir + '_output'):
             os.mkdir(datapath + dir + '_output')
-        # outputdir = datapath + dir + '_output'
-        # CountCells(datapath + dir + '/', outputdir)
+        outputdir = datapath + dir + '_output'
+        CountCells(datapath + dir + '/', outputdir)
 
 
 def plot_circles(circle_list, ax, args={"color": "white", "linewidth": 1, "alpha": 0.5}):
@@ -36,21 +38,18 @@ def plot_circles(circle_list, ax, args={"color": "white", "linewidth": 1, "alpha
         k += 1
     # print("This is k {}".format(k))
 
-
 def search_for_blobs(image, min_size=3, max_size=15, num_sigma=10, overlap=0.5, threshold=0.02, verbose=True):
 
     # detect blobs
     blobs_log = blob_log(image, max_sigma=max_size, min_sigma=min_size, num_sigma=num_sigma, overlap=overlap,
-                         threshold=threshold, log_scale=True)
+                         threshold=threshold, log_scale=False)
     blobs_log[:, 2] = blobs_log[:, 2] * sqrt(2)
-
     if verbose:
         ax = plt.axes()
         plt.imshow(image)
         plot_circles(circle_list=blobs_log, ax=ax)
 
     return blobs_log
-
 
 def CropImages(imagepath, ContainerType="petri dish"):
     pattern = ".jpg"
@@ -90,14 +89,6 @@ def CropImages(imagepath, ContainerType="petri dish"):
                 cropname +=1
             cv2.imwrite(imagepath  + "refference.jpg", img_small)
 
-            # plt.title("segmentation")
-            # plt.imshow(img)
-            # plt.imshow(labeled)
-            # plt.savefig("test.png", dpi=1000)
-
-        
-
-
 def CountCells(datadir, outputdir):
     pattern = "_cropped.jpg"
     matching_files = [f for f in os.listdir(datadir) if pattern in f]
@@ -105,6 +96,8 @@ def CountCells(datadir, outputdir):
         writer = csv.writer(f)
 
         for pic in matching_files:
+            if(pic[0] != "0"):
+                continue
             with open(outputdir + '/' + pic[0:len(pic)-4] + "_blob" + ".csv", 'w', encoding='UTF8', newline='') as fr:
                 writer_blob = csv.writer(fr)
 
@@ -135,17 +128,21 @@ def CountCells(datadir, outputdir):
 
                 # perform edge detection, then perform a dilation + erosion to close gaps in between object edges
                 image_edged = cv2.Canny(gray_blurred, 30, 55)
-                image_edged = cv2.dilate(image_edged, None, iterations=1)
-                image_edged = cv2.erode(image_edged, None, iterations=1)
+                image_edged = cv2.imfill
+                image_edged = cv2.erode(image_edged, None, iterations=1) # multiple times
+                blob detection
+                image_edged = cv2.dilate(image_edged, None, iterations=1) # active contour
 
                 # sharpen_kernel = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
                 # sharpen = cv2.filter2D(gray_blurred, -1, sharpen_kernel)
 
                 min_size = 12
-                max_size = 60
-                threshold = 0.12
-                num_sigma = 10
-                overlap = 0.3
+                max_size = 30
+                threshold = 0.11
+                num_sigma = 40
+                overlap = 0.7
+                cv2.imwrite(outputdir + '/' + pic[0:len(pic)-4] + "input.png",image_edged)
+
                 # verbose=True
                 blobs = search_for_blobs(image=gray_blurred, min_size=min_size, max_size=max_size, num_sigma=num_sigma,
                                          overlap=overlap, threshold=threshold, verbose=True)
@@ -163,7 +160,6 @@ def CountCells(datadir, outputdir):
                 print("{} completed".format(pic))
 
         f.close()
-
 
 def FilterBlueColor(img):
 
