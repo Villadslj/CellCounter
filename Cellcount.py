@@ -88,6 +88,10 @@ def CropImages(imagepath, ContainerType="petri dish"):
                 cv2.imwrite(imagepath  + str(cropname) + "_cropped.jpg", crop_img)
                 cropname +=1
             cv2.imwrite(imagepath  + "refference.jpg", img_small)
+        else:         
+            crop_img = img[8000:11167, 3850:5842]
+            cv2.imwrite(imagepath + pic[0:len(pic)-4] + "_cropped.jpg", crop_img)
+
 
 def CountCells(datadir, outputdir):
     pattern = "_cropped.jpg"
