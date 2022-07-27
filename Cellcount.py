@@ -72,6 +72,7 @@ def CropImages(imagepath, ContainerType="petri dish"):
         #find cell container
         if ContainerType=="petri dish":
             circles = detect_circle_by_canny(img_small, radius=round(petri_D/crop_factor))
+            
             cropname = 0
             for i in circles:
                 x=i[0]*crop_factor 
@@ -181,7 +182,52 @@ def FilterBlueColor(img):
     res = cv2.bitwise_and(img, img, mask=mask)
 
     return res
+def detect_circle_by_Square(image_bw, radius=395):
+    img = cv2.medianBlur(image_bw,1)
+    cimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    circles = cv2.HoughCircles(cimg,cv2.HOUGH_GRADIENT,1,20,
+                            param1=50,param2=30,minRadius=round(radius-(radius*0.1)),maxRadius=radius)
+    circles = np.uint16(np.around(circles))
+    cv2.namedWindow('detected circles',cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('detected circles', 300, 700)
+    cv2.imshow('detected circles',cimg)
+    # Remove overlapping circles
+    CircleList=[]
+    for i in circles[0,:]:
+        CircleList.append(i)
+    for i in range(len(CircleList)):
+        pt1=CircleList[i]
+        if (isinstance(pt1, int)):
+                continue
+        r=pt1[2]
+        for k in range(len(CircleList)):
+            pt2=CircleList[k]
+            if (isinstance(pt2, int) or isinstance(pt1, int)):
+                continue
+            if(pt1[0]==pt2[0] and pt1[1]==pt2[1]):
+                continue
+            distVec= [int(pt2[0])-int(pt1[0]),int(pt2[1])-int(pt1[1])]
+            distLength=sqrt(pow(distVec[0],2) + pow(distVec[1],2))
 
+            if(distLength < r and distLength!=0):
+                if(int(pt1[0]) < int(pt2[0])):
+                    CircleList[k]=int(0)
+                else:
+                    CircleList[i]=int(0)
+                
+    CircleList = [i for i in CircleList if not isinstance(i, int)]
+
+    # print(CircleList)
+    for i in range(len(CircleList)):
+        circ=CircleList[i]
+        # draw the outer circle
+        cv2.circle(cimg,(circ[0],circ[1]),circ[2],(0,255,0),2)
+        # draw the center of the circle
+        cv2.circle(cimg,(circ[0],circ[1]),2,(0,0,255),3)
+    # cv2.imshow('detected circles',cimg)
+    # cv2.waitKey(0)
+
+    return CircleList
 def detect_circle_by_canny(image_bw, radius=395):
     img = cv2.medianBlur(image_bw,1)
     cimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
