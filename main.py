@@ -14,8 +14,7 @@ from skimage.draw import circle_perimeter
 def main():
 
     # give path to picture folder:
-    datapath = "/home/villads/Documents/Cell-Data2/"
-
+    datapath = "/home/villads/Documents/Cell-Data3/"
 
     for dir in os.listdir(datapath):
         if dir[-7:len(dir)] == "_output":
@@ -51,7 +50,7 @@ def search_for_blobs(image, min_size=3, max_size=15, num_sigma=10, overlap=0.5, 
 
     return blobs_log
 
-def CropImages(imagepath, ContainerType="petri dish"):
+def CropImages(imagepath, ContainerType="Manual"):
     pattern = ".jpg"
     matching_files = [f for f in os.listdir(imagepath) if pattern in f]
     for pic in matching_files:
@@ -89,10 +88,30 @@ def CropImages(imagepath, ContainerType="petri dish"):
                 cv2.imwrite(imagepath  + str(cropname) + "_cropped.jpg", crop_img)
                 cropname +=1
             cv2.imwrite(imagepath  + "refference.jpg", img_small)
+        elif ContainerType=="Manual":
+            with open('CropInfo' + '/CropInfo_' + pic + '.csv', 'r') as csvfile:
+                print('Use Crop from: ' + 'CropInfo' + '/CropInfo_' + pic + '.csv' )
+                plots = csv.reader(filter(lambda row: row[0] != '#', csvfile), delimiter=',')
+                for row in plots:
+                    cropf = 20
+                    ix = int(row[0])*cropf # should be correct cropfactor, this case i used 25 in mouseDrawing.py
+                    iy = int(row[1])*cropf
+                    ex = int(row[2])*cropf
+                    ey = int(row[3])*cropf
+                    print(ix,iy, ex, ey)
+                    
+                    crop_img = img[ix:ex, iy:ey]
+                    cv2.namedWindow('test',cv2.WINDOW_NORMAL)
+                    cv2.resizeWindow('test', 300, 700)
+                    cv2.imshow('test',crop_img)
+                    cv2.waitKey(0)
+                    # cv2.imwrite(imagepath + pic[0:len(pic)-4] + "_cropped.jpg", crop_img)
+            csvfile.close()
+
         else:         
             crop_img = img[8000:11167, 3850:5842]
             cv2.imwrite(imagepath + pic[0:len(pic)-4] + "_cropped.jpg", crop_img)
-
+        
 
 def CountCells(datadir, outputdir):
     pattern = "_cropped.jpg"
@@ -135,7 +154,7 @@ def CountCells(datadir, outputdir):
                 image_edged = cv2.Canny(gray_blurred, 30, 55)
                 image_edged = cv2.imfill
                 image_edged = cv2.erode(image_edged, None, iterations=1) # multiple times
-                blob detection
+
                 image_edged = cv2.dilate(image_edged, None, iterations=1) # active contour
 
                 # sharpen_kernel = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
@@ -182,52 +201,40 @@ def FilterBlueColor(img):
     res = cv2.bitwise_and(img, img, mask=mask)
 
     return res
-def detect_circle_by_Square(image_bw, radius=395):
-    img = cv2.medianBlur(image_bw,1)
-    cimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    circles = cv2.HoughCircles(cimg,cv2.HOUGH_GRADIENT,1,20,
-                            param1=50,param2=30,minRadius=round(radius-(radius*0.1)),maxRadius=radius)
-    circles = np.uint16(np.around(circles))
-    cv2.namedWindow('detected circles',cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('detected circles', 300, 700)
-    cv2.imshow('detected circles',cimg)
-    # Remove overlapping circles
-    CircleList=[]
-    for i in circles[0,:]:
-        CircleList.append(i)
-    for i in range(len(CircleList)):
-        pt1=CircleList[i]
-        if (isinstance(pt1, int)):
-                continue
-        r=pt1[2]
-        for k in range(len(CircleList)):
-            pt2=CircleList[k]
-            if (isinstance(pt2, int) or isinstance(pt1, int)):
-                continue
-            if(pt1[0]==pt2[0] and pt1[1]==pt2[1]):
-                continue
-            distVec= [int(pt2[0])-int(pt1[0]),int(pt2[1])-int(pt1[1])]
-            distLength=sqrt(pow(distVec[0],2) + pow(distVec[1],2))
+def detect_square_by_canny(image):
+    #convert image into greyscale mode
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    imageBlur = cv2.medianBlur(gray_image, 9)
+    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+    # image_sharp = cv2.filter2D(imageBlur, -1, kernel)
+    #find threshold of the image
+    _, thrash = cv2.threshold(imageBlur, 160, 255, cv2.THRESH_BINARY_INV)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+    close = cv2.morphologyEx(thrash, cv2.MORPH_CLOSE, kernel, iterations=2)
+    contours, _ = cv2.findContours(thrash, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.namedWindow('detected square',cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('detected square', 300, 700)  
+    for contour in contours:
+        shape = cv2.approxPolyDP(contour, 0.01*cv2.arcLength(contour, True), True)
+        area = cv2.contourArea(contour)
+        x_cor = shape.ravel()[0]
+        y_cor = shape.ravel()[1]
+        
+        if len(shape) ==4 and area > 200:
+            #shape cordinates
+            x,y,w,h = cv2.boundingRect(shape)
 
-            if(distLength < r and distLength!=0):
-                if(int(pt1[0]) < int(pt2[0])):
-                    CircleList[k]=int(0)
-                else:
-                    CircleList[i]=int(0)
-                
-    CircleList = [i for i in CircleList if not isinstance(i, int)]
+            #width:height
+            aspectRatio = float(w)/h
+            cv2.drawContours(image, [shape], 0, (0,255,0), 4)
+            if aspectRatio >= 0.9 and aspectRatio <=1.1:
+                cv2.putText(image, "Square", (x_cor, y_cor), cv2.FONT_HERSHEY_COMPLEX, 0.5, (0,0,0))
+            else:
+                cv2.putText(image, "Rectangle", (x_cor, y_cor), cv2.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0))  
+    cv2.imshow('detected square', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
-    # print(CircleList)
-    for i in range(len(CircleList)):
-        circ=CircleList[i]
-        # draw the outer circle
-        cv2.circle(cimg,(circ[0],circ[1]),circ[2],(0,255,0),2)
-        # draw the center of the circle
-        cv2.circle(cimg,(circ[0],circ[1]),2,(0,0,255),3)
-    # cv2.imshow('detected circles',cimg)
-    # cv2.waitKey(0)
-
-    return CircleList
 def detect_circle_by_canny(image_bw, radius=395):
     img = cv2.medianBlur(image_bw,1)
     cimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
