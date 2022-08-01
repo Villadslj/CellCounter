@@ -44,7 +44,7 @@ def draw_reactangle_with_drag(event, x, y, flags, param):
             RectangleCorr.append(x)
             crop_img = img[y:iy, ix:x]
         
-        writer.writerow([ix, iy, x, y])
+        writer.writerow(RectangleCorr)
         print(RectangleCorr)
 
 

@@ -89,23 +89,23 @@ def CropImages(imagepath, ContainerType="Manual"):
                 cropname +=1
             cv2.imwrite(imagepath  + "refference.jpg", img_small)
         elif ContainerType=="Manual":
-            with open('CropInfo' + '/CropInfo_' + pic + '.csv', 'r') as csvfile:
-                print('Use Crop from: ' + 'CropInfo' + '/CropInfo_' + pic + '.csv' )
+            with open('CropInfo' + '/CropInfo_' + pic[0:len(pic)-4] + '.csv', 'r') as csvfile:
+                print('Use Crop from: ' + 'CropInfo' + '/CropInfo_' + pic[0:len(pic)-4] + '.csv' )
                 plots = csv.reader(filter(lambda row: row[0] != '#', csvfile), delimiter=',')
+                cropname = 0
                 for row in plots:
                     cropf = 20
-                    ix = int(row[0])*cropf # should be correct cropfactor, this case i used 25 in mouseDrawing.py
-                    iy = int(row[1])*cropf
-                    ex = int(row[2])*cropf
-                    ey = int(row[3])*cropf
-                    print(ix,iy, ex, ey)
+                    iy = int(row[0])*cropf # should be correct cropfactor, this case i used 20 in mouseDrawing.py
+                    ey = int(row[1])*cropf
+                    ix = int(row[2])*cropf
+                    ex = int(row[3])*cropf
                     
-                    crop_img = img[ix:ex, iy:ey]
-                    cv2.namedWindow('test',cv2.WINDOW_NORMAL)
-                    cv2.resizeWindow('test', 300, 700)
-                    cv2.imshow('test',crop_img)
-                    cv2.waitKey(0)
-                    # cv2.imwrite(imagepath + pic[0:len(pic)-4] + "_cropped.jpg", crop_img)
+                    crop_img = img[iy:ey, ix:ex]
+                    cv2.putText(img=img_small, text=str(cropname), org=(round(x/crop_factor), round(y/crop_factor)), 
+                           fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=3, color=(0, 0, 0),thickness=3)
+                    cv2.imwrite(imagepath  + str(cropname) + "_cropped.jpg", crop_img)
+                    cropname +=1
+                cv2.imwrite(imagepath  + "refference.jpg", img_small)
             csvfile.close()
 
         else:         
