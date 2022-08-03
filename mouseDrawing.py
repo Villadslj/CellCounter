@@ -56,6 +56,8 @@ drawing = False
 
 pattern = ".jpg"
 matching_files = [f for f in os.listdir(imagepath) if pattern in f]
+if not os.path.isdir('CropInfo'):
+            os.mkdir('CropInfo')
 for pic in matching_files:
     img = cv2.imread(imagepath + pic)
     crop_factor = 20

@@ -20,7 +20,7 @@ def main():
         if dir[-7:len(dir)] == "_output":
             continue
         CropImages(datapath + dir + '/')
-        # check is output dir exist or create one
+        # check if outputdir exist or create one
         if not os.path.isdir(datapath + dir + '_output'):
             os.mkdir(datapath + dir + '_output')
         outputdir = datapath + dir + '_output'
@@ -101,7 +101,7 @@ def CropImages(imagepath, ContainerType="Manual"):
                     ex = int(row[3])*cropf
                     
                     crop_img = img[iy:ey, ix:ex]
-                    cv2.putText(img=img_small, text=str(cropname), org=(round(x/crop_factor), round(y/crop_factor)), 
+                    cv2.putText(img=img_small, text=str(cropname), org=(round(ix/crop_factor), round(iy/crop_factor)), 
                            fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=3, color=(0, 0, 0),thickness=3)
                     cv2.imwrite(imagepath  + str(cropname) + "_cropped.jpg", crop_img)
                     cropname +=1
@@ -152,7 +152,7 @@ def CountCells(datadir, outputdir):
 
                 # perform edge detection, then perform a dilation + erosion to close gaps in between object edges
                 image_edged = cv2.Canny(gray_blurred, 30, 55)
-                image_edged = cv2.imfill
+                # image_edged = cv2.imfill
                 image_edged = cv2.erode(image_edged, None, iterations=1) # multiple times
 
                 image_edged = cv2.dilate(image_edged, None, iterations=1) # active contour
