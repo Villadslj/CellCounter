@@ -48,7 +48,7 @@ def draw_reactangle_with_drag(event, x, y, flags, param):
         print(RectangleCorr)
 
 
-imagepath = "/home/villads/Documents/Cell-Data3/Proton_Borh_V79/"
+imagepath = "/home/villads/Documents/Cell-Data3/P17_Bohr/"
 # variables
 ix = -1
 iy = -1

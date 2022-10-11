@@ -1,4 +1,5 @@
 from genericpath import exists
+import string
 import cv2
 import numpy as np
 import os
@@ -9,15 +10,20 @@ import matplotlib.pyplot as plt
 from skimage.transform import hough_circle, hough_circle_peaks
 from skimage.feature import canny
 from skimage.draw import circle_perimeter
+import sys
 
 
 def main():
 
     # give path to picture folder:
-    datapath = "/home/villads/Documents/Cell-Data3/"
-
+   
+    parser = sys.argv
+    datapath = parser[1]
+   
     for dir in os.listdir(datapath):
         if dir[-7:len(dir)] == "_output":
+            continue
+        if dir != 'P17_Bohr':
             continue
         CropImages(datapath + dir + '/')
         # check if outputdir exist or create one
@@ -120,8 +126,6 @@ def CountCells(datadir, outputdir):
         writer = csv.writer(f)
 
         for pic in matching_files:
-            if(pic[0] != "0"):
-                continue
             with open(outputdir + '/' + pic[0:len(pic)-4] + "_blob" + ".csv", 'w', encoding='UTF8', newline='') as fr:
                 writer_blob = csv.writer(fr)
 
@@ -139,33 +143,33 @@ def CountCells(datadir, outputdir):
 
                 # call addWeighted function. use beta = 0 to effectively only operate one one image
 
-                # out = cv2.addWeighted(img_b, 2, img_b, 0, 100)
+                out = cv2.addWeighted(img_b, 2, img_b, 0, 100)
                 # cv2.imshow(pic, cv2.resize(out, (480, 800)))
 
                 # cv2.waitKey(0)
                 # Convert to grayscale.
-                gray = cv2.cvtColor(img_b, cv2.COLOR_BGR2GRAY)
+                gray = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
 
                 # Blur using 3 * 3 kernel.
                 # gray_blurred = cv2.blur(gray, (5, 5))  # (10, 10)
                 gray_blurred = cv2.GaussianBlur(gray, (15, 15), 0)
 
                 # perform edge detection, then perform a dilation + erosion to close gaps in between object edges
-                image_edged = cv2.Canny(gray_blurred, 30, 55)
-                # image_edged = cv2.imfill
-                image_edged = cv2.erode(image_edged, None, iterations=1) # multiple times
+                # image_edged = cv2.Canny(gray_blurred, 30, 55)
+                # # image_edged = cv2.imfill
+                # image_edged = cv2.erode(image_edged, None, iterations=1) # multiple times
 
-                image_edged = cv2.dilate(image_edged, None, iterations=1) # active contour
+                # image_edged = cv2.dilate(image_edged, None, iterations=1) # active contour
 
                 # sharpen_kernel = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
                 # sharpen = cv2.filter2D(gray_blurred, -1, sharpen_kernel)
 
-                min_size = 12
+                min_size = 20
                 max_size = 30
                 threshold = 0.11
-                num_sigma = 40
-                overlap = 0.7
-                cv2.imwrite(outputdir + '/' + pic[0:len(pic)-4] + "input.png",image_edged)
+                num_sigma = 10
+                overlap = 0.3
+                cv2.imwrite(outputdir + '/' + pic[0:len(pic)-4] + "input.png",gray_blurred)
 
                 # verbose=True
                 blobs = search_for_blobs(image=gray_blurred, min_size=min_size, max_size=max_size, num_sigma=num_sigma,
