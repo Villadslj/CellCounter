@@ -1,5 +1,7 @@
-/*_output
-/DoseToVolume.csv
-/DoseToVolumeB.csv
+/Output
+/old_aproach
+/LQ Fit
 /Plotting Macro
-/CropInfo
+/DoseProfile
+*.ini
+/.*

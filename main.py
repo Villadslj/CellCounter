@@ -1,291 +1,382 @@
-from genericpath import exists
-import string
+import tkinter as tk
+from tkinter import filedialog
+from PIL import Image, ImageTk
 import cv2
 import numpy as np
-import os
 import csv
+import os
 from skimage.feature import blob_log
-from math import dist, sqrt
+from math import sqrt
 import matplotlib.pyplot as plt
-from skimage.transform import hough_circle, hough_circle_peaks
-from skimage.feature import canny
-from skimage.draw import circle_perimeter
-import sys
+import configparser
+import tkinter.ttk as ttk
+
+Image.MAX_IMAGE_PIXELS = None
+
+class ColonyCounterApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Colony Counter App")
+
+        # Variables
+        self.image_path = self.load_last_image_path()
+        self.colony_images = []
+        self.rectangles = [] 
+
+        # UI Elements
+        self.label = tk.Label(root, text="Step 1: Load Image")
+        self.label.pack()
+
+        self.load_button = tk.Button(root, text="Load Image", command=self.load_image)
+        self.load_button.pack()
+
+        self.crop_button = tk.Button(root, text="Crop Image", command=self.crop_colonies)
+        self.crop_button.pack()
+
+        self.count_button = tk.Button(root, text="Count Colonies", command=self.count_colonies)
+        self.count_button.pack()
+
+    def load_image(self):
+        initial_dir = os.path.dirname(self.image_path) if self.image_path else os.getcwd()
+        self.image_path = filedialog.askopenfilename(
+            title="Select an Image",
+            filetypes=[("Image files", ".jpg", ".png")],
+            initialdir=initial_dir
+        )
+
+        if self.image_path:
+            self.display_image()
+            self.save_last_image_path()
+
+    def display_image(self):
+        image = Image.open(self.image_path)
+        image.thumbnail((300, 300))
+        tk_image = ImageTk.PhotoImage(image)
+
+        # Display image
+        if hasattr(self, "canvas"):
+            self.canvas.destroy()
+
+        self.canvas = tk.Canvas(self.root, width=tk_image.width(), height=tk_image.height())
+        self.canvas.pack()
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=tk_image)
+        self.canvas.image = tk_image
+
+    def save_last_image_path(self):
+        config = configparser.ConfigParser()
+        config['LastImage'] = {'Path': self.image_path}
+        with open('config.ini', 'w') as configfile:
+            config.write(configfile)
+
+    def load_last_image_path(self):
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+        return config.get('LastImage', 'Path', fallback='')
+
+    def crop_colonies(self):
+        if not self.image_path:
+            print("Please load an image first.")
+            return
+
+        # Create a separate window for cropping
+        self.crop_window = tk.Toplevel(self.root)
+        self.crop_window.title("Crop Colonies")
+
+        # Load the image
+        img = cv2.imread(self.image_path)
+        self.img_height, self.img_width, _ = img.shape
+        self.crop_factor = round(self.img_width/600)
+
+        img = cv2.resize(img, (round(self.img_width/self.crop_factor), round(self.img_height/self.crop_factor)))
+
+        # Convert the image to RGB format
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # Convert the image to PhotoImage format
+        tk_img = ImageTk.PhotoImage(Image.fromarray(img_rgb))
+
+        # Create a canvas for drawing rectangles
+    
+        self.crop_canvas = tk.Canvas(self.crop_window, width=round(self.img_width/self.crop_factor), height=round(self.img_height/self.crop_factor))
+        self.crop_canvas.pack()
+
+        # Display the image on the canvas
+        self.crop_canvas.create_image(0, 0, anchor=tk.NW, image=tk_img)
+        self.crop_canvas.image = tk_img
+
+        # Button to apply cropping
+        self.apply_crop_button = tk.Button(self.crop_window, text="Apply Crop", command=self.apply_crop)
+        self.apply_crop_button.pack()
+
+        # Variables for drawing rectangles
+        self.ix, self.iy = -1, -1
+        self.drawing = False
+        self.rectangle_coords = []
+
+        def draw_rectangle_with_drag(event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDOWN:
+                self.drawing = True
+                self.ix, self.iy = x, y
+
+            elif event == cv2.EVENT_MOUSEMOVE:
+                if self.drawing:
+
+                    # Delete existing rectangles and create a new one
+                    self.crop_canvas.delete("rectangle")
+                    self.crop_canvas.create_rectangle(self.ix, self.iy, x, y, outline="red", tags="rectangle")
+
+            elif event == cv2.EVENT_LBUTTONUP:
+                self.drawing = False
+                # self.crop_canvas.delete("rectangle")
+                # x, y = min(x, self.img_width), min(y, self.img_height)
+                scaled_x = int(x * self.crop_factor)
+                scaled_y = int(y * self.crop_factor)
+                scaled_ix = int(self.ix * self.crop_factor)
+                scaled_iy = int(self.iy * self.crop_factor)
+                self.rectangle_coords.append([scaled_ix, scaled_iy, scaled_x, scaled_y])
 
 
-def main():
 
-    # give path to picture folder:
-   
-    parser = sys.argv
-    datapath = parser[1]
-   
-    for dir in os.listdir(datapath):
-        if dir[-7:len(dir)] == "_output":
-            continue
-        if dir != 'P17_Bohr':
-            continue
-        CropImages(datapath + dir + '/')
-        # check if outputdir exist or create one
-        if not os.path.isdir(datapath + dir + '_output'):
-            os.mkdir(datapath + dir + '_output')
-        outputdir = datapath + dir + '_output'
-        CountCells(datapath + dir + '/', outputdir)
+        cv2.namedWindow("Crop Colonies")
+        cv2.setMouseCallback("Crop Colonies", draw_rectangle_with_drag)
 
+        while True:
+            cv2.imshow("Crop Colonies", img)
+            if cv2.waitKey(10) == 27:
+                break
 
-def plot_circles(circle_list, ax, args={"color": "white", "linewidth": 1, "alpha": 0.5}):
-    # print(len(circle_list))
-    k = 0
-    for blob in circle_list:
-        y, x, r = blob
-        c = plt.Circle((x, y), r, **args, fill=False)
-        ax.add_patch(c)
-        k += 1
-    # print("This is k {}".format(k))
+        cv2.destroyAllWindows()
 
-def search_for_blobs(image, min_size=3, max_size=15, num_sigma=10, overlap=0.5, threshold=0.02, verbose=True):
-
-    # detect blobs
-    blobs_log = blob_log(image, max_sigma=max_size, min_sigma=min_size, num_sigma=num_sigma, overlap=overlap,
-                         threshold=threshold, log_scale=False)
-    blobs_log[:, 2] = blobs_log[:, 2] * sqrt(2)
-    if verbose:
-        ax = plt.axes()
-        plt.imshow(image)
-        plot_circles(circle_list=blobs_log, ax=ax)
-
-    return blobs_log
-
-def CropImages(imagepath, ContainerType="Manual"):
-    pattern = ".jpg"
-    matching_files = [f for f in os.listdir(imagepath) if pattern in f]
-    for pic in matching_files:
-        if exists(imagepath + pic[0:len(pic)-4] + "_cropped.jpg") or pic[len(pic)-12:len(pic)] == "_cropped.jpg":
-            print(pic + " Already cropped")
-            continue
-        if exists(imagepath + "refference.jpg") or pic[len(pic)-12:len(pic)] == "_cropped.jpg":
-            print(pic + " Is a refference picture")
-            continue
-        print('cropping ', imagepath + pic)
-        img = cv2.imread(imagepath + pic)
-        crop_factor = 8
-        img_small = cv2.resize(img, (round(img.shape[1]/crop_factor), round(img.shape[0]/crop_factor)))
-        # cv2.imshow('test',img_small)
-        # cv2.waitKey(0)
-
-        petri_D = 1300
-        #find cell container
-        if ContainerType=="petri dish":
-            circles = detect_circle_by_canny(img_small, radius=round(petri_D/crop_factor))
-            
-            cropname = 0
-            for i in circles:
-                x=i[0]*crop_factor 
-                y=i[1]*crop_factor
-                r=i[2]*crop_factor
-                mask = np.zeros(img.shape[:2], dtype="uint8")
-                mask = cv2.circle(mask,(x,y),r,255,-1)
-                #cv2.imwrite(argv[2],mask)
-                out = cv2.bitwise_and(img, img, mask=mask)
-                crop_img = out[y-r:y+r, x-r:x+r]
-            
-                cv2.putText(img=img_small, text=str(cropname), org=(round(x/crop_factor), round(y/crop_factor)), 
-                           fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=3, color=(0, 0, 0),thickness=3)
-                cv2.imwrite(imagepath  + str(cropname) + "_cropped.jpg", crop_img)
-                cropname +=1
-            cv2.imwrite(imagepath  + "refference.jpg", img_small)
-        elif ContainerType=="Manual":
-            with open('CropInfo' + '/CropInfo_' + pic[0:len(pic)-4] + '.csv', 'r') as csvfile:
-                print('Use Crop from: ' + 'CropInfo' + '/CropInfo_' + pic[0:len(pic)-4] + '.csv' )
-                plots = csv.reader(filter(lambda row: row[0] != '#', csvfile), delimiter=',')
-                cropname = 0
-                for row in plots:
-                    cropf = 20
-                    iy = int(row[0])*cropf # should be correct cropfactor, this case i used 20 in mouseDrawing.py
-                    ey = int(row[1])*cropf
-                    ix = int(row[2])*cropf
-                    ex = int(row[3])*cropf
-                    
-                    crop_img = img[iy:ey, ix:ex]
-                    cv2.putText(img=img_small, text=str(cropname), org=(round(ix/crop_factor), round(iy/crop_factor)), 
-                           fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=3, color=(0, 0, 0),thickness=3)
-                    cv2.imwrite(imagepath  + str(cropname) + "_cropped.jpg", crop_img)
-                    cropname +=1
-                cv2.imwrite(imagepath  + "refference.jpg", img_small)
-            csvfile.close()
-
-        else:         
-            crop_img = img[8000:11167, 3850:5842]
-            cv2.imwrite(imagepath + pic[0:len(pic)-4] + "_cropped.jpg", crop_img)
+    def apply_crop(self):
+        if not self.rectangle_coords:
+            print("No crop coordinates found.")
+            return
         
+        save_directory = filedialog.askdirectory(title="Select the directory to save cropped images and crop information",
+                                                 initialdir=os.path.abspath("CroppedImages"))
+        if not save_directory:
+            print("No save directory selected.")
+            return
 
-def CountCells(datadir, outputdir):
-    pattern = "_cropped.jpg"
-    matching_files = [f for f in os.listdir(datadir) if pattern in f]
-    with open(outputdir + '/Cellcount.csv', 'w', encoding='UTF8', newline='') as f:
-        writer = csv.writer(f)
-
-        for pic in matching_files:
-            with open(outputdir + '/' + pic[0:len(pic)-4] + "_blob" + ".csv", 'w', encoding='UTF8', newline='') as fr:
-                writer_blob = csv.writer(fr)
-
-                print(datadir + pic)
-                # Read image.
-                img = cv2.imread(datadir + pic, cv2.IMREAD_COLOR)
-
-                # BlueFilter
-                img_b = FilterBlueColor(img)
-
-                # alpha 1  beta 0      --> no change
-                # 0 < alpha < 1        --> lower contrast
-                # alpha > 1            --> higher contrast
-                # -127 < beta < +127   --> good range for brightness values
-
-                # call addWeighted function. use beta = 0 to effectively only operate one one image
-
-                out = cv2.addWeighted(img_b, 2, img_b, 0, 100)
-                # cv2.imshow(pic, cv2.resize(out, (480, 800)))
-
-                # cv2.waitKey(0)
-                # Convert to grayscale.
-                gray = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
-
-                # Blur using 3 * 3 kernel.
-                # gray_blurred = cv2.blur(gray, (5, 5))  # (10, 10)
-                gray_blurred = cv2.GaussianBlur(gray, (15, 15), 0)
-
-                # perform edge detection, then perform a dilation + erosion to close gaps in between object edges
-                # image_edged = cv2.Canny(gray_blurred, 30, 55)
-                # # image_edged = cv2.imfill
-                # image_edged = cv2.erode(image_edged, None, iterations=1) # multiple times
-
-                # image_edged = cv2.dilate(image_edged, None, iterations=1) # active contour
-
-                # sharpen_kernel = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
-                # sharpen = cv2.filter2D(gray_blurred, -1, sharpen_kernel)
-
-                min_size = 20
-                max_size = 30
-                threshold = 0.11
-                num_sigma = 10
-                overlap = 0.3
-                cv2.imwrite(outputdir + '/' + pic[0:len(pic)-4] + "input.png",gray_blurred)
-
-                # verbose=True
-                blobs = search_for_blobs(image=gray_blurred, min_size=min_size, max_size=max_size, num_sigma=num_sigma,
-                                         overlap=overlap, threshold=threshold, verbose=True)
-                # print(detected_blobs)
-                writer.writerow([len(blobs), pic])
-                plt.imshow(img)
-                plt.savefig(outputdir + '/' + pic[0:len(pic)-4] + ".png", dpi=1000)
-                # plt.show()
-                plt.close()
-                # print(outputdir + '/' + pic[0:len(pic)-4] + ".png")
-                for blob in blobs:
-                    x, y, r = blob
-                    writer_blob.writerow([x, y, r])
-                fr.close()
-                print("{} completed".format(pic))
-
-        f.close()
-
-def FilterBlueColor(img):
-
-    # It converts the BGR color space of image to HSV color space
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    # Threshold of blue in HSV space
-    lower_blue = np.array([60, 70, 100])
-    upper_blue = np.array([277, 275, 275])
-
-    # preparing the mask to overlay
-    mask = cv2.inRange(hsv, lower_blue, upper_blue)
-
-    # Filter only the red colour from the original image using the mask(foreground)
-    res = cv2.bitwise_and(img, img, mask=mask)
-
-    return res
-def detect_square_by_canny(image):
-    #convert image into greyscale mode
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    imageBlur = cv2.medianBlur(gray_image, 9)
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-    # image_sharp = cv2.filter2D(imageBlur, -1, kernel)
-    #find threshold of the image
-    _, thrash = cv2.threshold(imageBlur, 160, 255, cv2.THRESH_BINARY_INV)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
-    close = cv2.morphologyEx(thrash, cv2.MORPH_CLOSE, kernel, iterations=2)
-    contours, _ = cv2.findContours(thrash, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.namedWindow('detected square',cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('detected square', 300, 700)  
-    for contour in contours:
-        shape = cv2.approxPolyDP(contour, 0.01*cv2.arcLength(contour, True), True)
-        area = cv2.contourArea(contour)
-        x_cor = shape.ravel()[0]
-        y_cor = shape.ravel()[1]
+        # Create directories if they don't exist
+        crop_info_dir = 'CropInfo'
+        cropped_images_dir = 'CroppedImages'
         
-        if len(shape) ==4 and area > 200:
-            #shape cordinates
-            x,y,w,h = cv2.boundingRect(shape)
+        for directory in [crop_info_dir, cropped_images_dir]:
+            if not os.path.exists(directory):
+                os.makedirs(directory)
 
-            #width:height
-            aspectRatio = float(w)/h
-            cv2.drawContours(image, [shape], 0, (0,255,0), 4)
-            if aspectRatio >= 0.9 and aspectRatio <=1.1:
-                cv2.putText(image, "Square", (x_cor, y_cor), cv2.FONT_HERSHEY_COMPLEX, 0.5, (0,0,0))
+        # Ensure rectangle_coords is a list of lists
+        if not isinstance(self.rectangle_coords[0], list):
+            self.rectangle_coords = [self.rectangle_coords]
+
+        # Apply cropping to the original image for each rectangle
+        for idx, coords in enumerate(self.rectangle_coords):
+            if len(coords) == 2:
+                # Special case: single pair of coordinates
+                x, y = coords
+                x2, y2 = self.img_width, self.img_height
             else:
-                cv2.putText(image, "Rectangle", (x_cor, y_cor), cv2.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0))  
-    cv2.imshow('detected square', image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-def detect_circle_by_canny(image_bw, radius=395):
-    img = cv2.medianBlur(image_bw,1)
-    cimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    circles = cv2.HoughCircles(cimg,cv2.HOUGH_GRADIENT,1,20,
-                            param1=50,param2=30,minRadius=round(radius-(radius*0.1)),maxRadius=radius)
-    circles = np.uint16(np.around(circles))
-    cv2.namedWindow('detected circles',cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('detected circles', 300, 700)
-    cv2.imshow('detected circles',cimg)
-    # Remove overlapping circles
-    CircleList=[]
-    for i in circles[0,:]:
-        CircleList.append(i)
-    for i in range(len(CircleList)):
-        pt1=CircleList[i]
-        if (isinstance(pt1, int)):
-                continue
-        r=pt1[2]
-        for k in range(len(CircleList)):
-            pt2=CircleList[k]
-            if (isinstance(pt2, int) or isinstance(pt1, int)):
-                continue
-            if(pt1[0]==pt2[0] and pt1[1]==pt2[1]):
-                continue
-            distVec= [int(pt2[0])-int(pt1[0]),int(pt2[1])-int(pt1[1])]
-            distLength=sqrt(pow(distVec[0],2) + pow(distVec[1],2))
-
-            if(distLength < r and distLength!=0):
-                if(int(pt1[0]) < int(pt2[0])):
-                    CircleList[k]=int(0)
-                else:
-                    CircleList[i]=int(0)
+                # Normal case: four coordinates
+                x, y, x2, y2 = coords
+            
+            # # Ensure coordinates are within image bounds
+            # x, y =max(0, x), min(0, y)
+            # x2, y2 = max(self.img_width, x2), max(self.img_height, y2)
                 
-    CircleList = [i for i in CircleList if not isinstance(i, int)]
+            # Apply cropping to the original image
+            crop_img = cv2.imread(self.image_path)
+            crop_img = crop_img[y:y2, x:x2]
 
-    # print(CircleList)
-    for i in range(len(CircleList)):
-        circ=CircleList[i]
-        # draw the outer circle
-        cv2.circle(cimg,(circ[0],circ[1]),circ[2],(0,255,0),2)
-        # draw the center of the circle
-        cv2.circle(cimg,(circ[0],circ[1]),2,(0,0,255),3)
-    # cv2.imshow('detected circles',cimg)
-    # cv2.waitKey(0)
+            # Define the directory for cropped images
+            cropped_images_dir = os.path.join(save_directory, "CroppedImages")
+            os.makedirs(cropped_images_dir, exist_ok=True)
 
-    return CircleList
+            # Save cropped image
+            cropped_img_path = os.path.join(cropped_images_dir, f'CroppedImage_{os.path.basename(self.image_path)[:-4]}_{idx + 1}.jpg')
+            cv2.imwrite(cropped_img_path, crop_img)
+
+            # Define the directory for crop information
+            crop_info_dir = os.path.join(save_directory, "CropInfo")
+            os.makedirs(crop_info_dir, exist_ok=True)
+
+            # Save crop information to CSV file
+            crop_info_path = os.path.join(crop_info_dir, f'CropInfo_{os.path.basename(self.image_path)[:-4]}_{idx + 1}.csv')
+            with open(crop_info_path, 'w', encoding='UTF8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([x, y, x2, y2])
+
+        # Close crop window
+        self.crop_window.destroy()
+
+
+
+    def count_colonies(self):
+        # Prompt user to select the location of cropped pictures
+        cropped_images_path = filedialog.askdirectory(title="Select the location of cropped images",
+                                                    initialdir=os.path.abspath("CroppedImages"))
+        if not cropped_images_path:
+            print("No cropped images selected.")
+            return
+        
+        output_directory = filedialog.askdirectory(title="Select the directory to save counting data",
+                                               initialdir=os.path.abspath("BlobInfo"))
+        if not output_directory:
+            print("No output directory selected.")
+            return
+
+
+        # Prompt user to modify blob detection parameters
+        params_dialog = tk.Toplevel(self.root)
+        params_dialog.title("Modify Blob Detection Parameters")
+
+        # Set default values for blob detection parameters
+        default_min_size = 20
+        default_max_size = 30
+        default_threshold = 0.11
+        default_num_sigma = 10
+        default_overlap = 0.3
+
+        min_size_label = tk.Label(params_dialog, text="Min Size:")
+        min_size_entry = tk.Entry(params_dialog)
+        min_size_entry.insert(0, str(default_min_size))  # Set default value
+        min_size_label.grid(row=0, column=0, padx=5, pady=5)
+        min_size_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        max_size_label = tk.Label(params_dialog, text="Max Size:")
+        max_size_entry = tk.Entry(params_dialog)
+        max_size_entry.insert(0, str(default_max_size))  # Set default value
+        max_size_label.grid(row=1, column=0, padx=5, pady=5)
+        max_size_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        threshold_label = tk.Label(params_dialog, text="Threshold:")
+        threshold_entry = tk.Entry(params_dialog)
+        threshold_entry.insert(0, str(default_threshold))  # Set default value
+        threshold_label.grid(row=2, column=0, padx=5, pady=5)
+        threshold_entry.grid(row=2, column=1, padx=5, pady=5)
+
+        num_sigma_label = tk.Label(params_dialog, text="Num Sigma:")
+        num_sigma_entry = tk.Entry(params_dialog)
+        num_sigma_entry.insert(0, str(default_num_sigma))  # Set default value
+        num_sigma_label.grid(row=3, column=0, padx=5, pady=5)
+        num_sigma_entry.grid(row=3, column=1, padx=5, pady=5)
+
+        overlap_label = tk.Label(params_dialog, text="Overlap:")
+        overlap_entry = tk.Entry(params_dialog)
+        overlap_entry.insert(0, str(default_overlap))  # Set default value
+        overlap_label.grid(row=4, column=0, padx=5, pady=5)
+        overlap_entry.grid(row=4, column=1, padx=5, pady=5)
+
+        def plot_circles(circle_list, ax, args={"color": "white", "linewidth": 1, "alpha": 0.5}):
+            for blob in circle_list:
+                y, x, r = blob
+                c = plt.Circle((x, y), r, **args, fill=False)
+                ax.add_patch(c)
+
+        def FilterBlueColor(img):
+            # Convert the BGR color space of image to HSV color space
+            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+            # Threshold of blue in HSV space
+            lower_blue = np.array([60, 70, 100])
+            upper_blue = np.array([130, 255, 255])
+
+            # Preparing the mask to overlay
+            mask = cv2.inRange(hsv, lower_blue, upper_blue)
+
+            # Filter only the blue color from the original image using the mask (foreground)
+            res = cv2.bitwise_and(img, img, mask=mask)
+            return res
+        def count_cells():
+            # Get user-modified blob detection parameters
+            try:
+                min_size = int(min_size_entry.get())
+                max_size = int(max_size_entry.get())
+                threshold = float(threshold_entry.get())
+                num_sigma = int(num_sigma_entry.get())
+                overlap = float(overlap_entry.get())
+            except ValueError:
+                print("Invalid input for blob detection parameters. Using default values.")
+                params_dialog.destroy()
+                return
+
+            params_dialog.destroy()
+
+            # Create a separate window for cell counting
+            count_window = tk.Toplevel(self.root)
+            count_window.title("Count Cells")
+
+            # Create a progress bar
+            progress = ttk.Progressbar(count_window, orient="horizontal", length=300, mode="determinate")
+            progress.pack()
+
+            # Get the total number of images for calculating progress
+            total_images = len([filename for filename in os.listdir(cropped_images_path) if filename.endswith(".jpg")])
+
+            # Iterate through all the cropped images in the selected location
+            for idx, filename in enumerate(os.listdir(cropped_images_path)):
+                if filename.endswith(".jpg"):
+                    img_path = os.path.join(cropped_images_path, filename)
+                    # Load the cropped image
+                    img = cv2.imread(img_path)
+                    # Blue Filter
+                    img_b = FilterBlueColor(img)
+                    out = cv2.addWeighted(img_b, 2, img_b, 0, 100)
+
+                    # Convert image to grayscale
+                    gray = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
+
+                    # Apply Gaussian Blur
+                    gray_blurred = cv2.GaussianBlur(gray, (15, 15), 0)
+
+                    # Detect blobs
+                    blobs = self.search_for_blobs(gray_blurred, min_size, max_size, num_sigma, overlap, threshold, verbose=False)
+
+                    # Define the output directory for blob information
+                    output_dir = os.path.join(output_directory, os.path.basename(img_path)[:-4])
+                    os.makedirs(output_dir, exist_ok=True)
+
+                    # Save blob coordinates to CSV file
+                    blob_info_path = os.path.join(output_dir, f'BlobInfo_{os.path.basename(img_path)[:-4]}.csv')
+                    with open(blob_info_path, 'w', encoding='UTF8', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([len(blobs), filename])
+                        for blob in blobs:
+                            x, y, r = blob
+                            writer.writerow([x, y, r])
+
+                   # Draw circles on the image and save it
+                    fig, ax = plt.subplots()
+                    ax.imshow(img)
+                    plot_circles(circle_list=blobs, ax=ax)
+                    blob_pic_path = os.path.join(output_dir, f'BlobInfo_{os.path.basename(img_path)[:-4]}.jpg')
+                    plt.savefig(blob_pic_path, dpi=1000)
+                    plt.close()
+
+                    print(f"Cell Counting Complete for {filename}")
+
+                    # Update progress bar
+                    progress["value"] = (idx + 1) / total_images * 100
+                    count_window.update_idletasks()
+
+            # Destroy the progress bar once the process is complete
+            progress.destroy()
+            count_window.destroy()
+            print("Cell Counting for all images complete.")
+
+        # Button to apply blob detection parameters
+        apply_params_button = tk.Button(params_dialog, text="Apply Parameters", command=count_cells)
+        apply_params_button.grid(row=5, column=0, columnspan=2, pady=10)
+
+    def search_for_blobs(self, image, min_size=3, max_size=15, num_sigma=10, overlap=0.5, threshold=0.02, verbose=True):
+        # Detect blobs
+        blobs_log = blob_log(image, max_sigma=max_size, min_sigma=min_size, num_sigma=num_sigma, overlap=overlap,
+                             threshold=threshold, log_scale=False)
+        blobs_log[:, 2] = blobs_log[:, 2] * sqrt(2)
+
+        return blobs_log
 
 
 if __name__ == "__main__":
-    main()
+    root = tk.Tk()
+    app = ColonyCounterApp(root)
+    root.mainloop()
