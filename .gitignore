@@ -6,3 +6,8 @@
 *.ini
 /.*
 /ls
+*.jpg
+*.pdf
+*.svg
+*.eps
+*.png
