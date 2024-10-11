@@ -1,8 +1,5 @@
-/Output
-/old_aproach
-/LQ Fit
-/Plotting Macro
-/DoseProfile
+ex_*
+old_*
 *.ini
 /.*
 /ls
